@@ -23,7 +23,6 @@ async def run():
 
         # Locate chat input textbox
         print("Finding chat input...")
-        # Look for textarea or input or contenteditable
         input_elem = await page.wait_for_selector("textarea, input[type='text'], [contenteditable='true']", timeout=10000)
         
         # 1. Ask it to scan microsoft.com
@@ -59,6 +58,8 @@ async def run():
 
         final_video = os.path.join(video_dir, "playground_demo.webm")
         if os.path.exists(video_path):
+            if os.path.exists(final_video):
+                os.remove(final_video)
             os.rename(video_path, final_video)
             print(f"Demo recording saved successfully to: {final_video}")
 

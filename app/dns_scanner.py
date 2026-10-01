@@ -74,13 +74,59 @@ def detect_platform(mx_records: List[str]) -> str:
     return "Other"
 
 
+def collect_spf_tree(domain: str, max_depth: int = 10) -> Dict[str, List[str]]:
+    """Recursively fetches SPF TXT records via dns.google for every include: and redirect= (max depth 10).
+
+    Args:
+        domain: Domain name to inspect.
+        max_depth: Maximum recursion depth (default 10).
+
+    Returns:
+        Dictionary mapping domain/hostname to list of raw SPF TXT records.
+    """
+    clean_domain = domain.lower().strip()
+    if clean_domain.startswith("http://") or clean_domain.startswith("https://"):
+        clean_domain = urllib.parse.urlparse(clean_domain).netloc
+
+    tree: Dict[str, List[str]] = {}
+    visited = set()
+
+    def _walk(curr: str, depth: int):
+        target = curr.lower().strip()
+        if not target or target in visited or depth > max_depth:
+            return
+        visited.add(target)
+
+        records = query_doh(target, "TXT")
+        spf_records = [r for r in records if r.lower().startswith("v=spf1")]
+        if not spf_records:
+            return
+        tree[target] = spf_records
+
+        for spf in spf_records:
+            for token in spf.split()[1:]:
+                tl = token.lower()
+                if tl.startswith("include:"):
+                    inc_target = token.split(":", 1)[1].strip()
+                    if inc_target:
+                        _walk(inc_target, depth + 1)
+                elif tl.startswith("redirect="):
+                    redir_target = token.split("=", 1)[1].strip()
+                    if redir_target:
+                        _walk(redir_target, depth + 1)
+
+    _walk(clean_domain, 0)
+    return tree
+
+
 def calculate_score_and_findings(
     mx_records: List[str],
     spf_record: Optional[str],
     dkim_selectors_found: List[str],
     dmarc_record: Optional[str],
     dmarc_policy: Optional[str],
-    mta_sts: bool
+    mta_sts: bool,
+    spf_lookups: Optional[int] = None,
 ) -> Tuple[int, str, List[Dict[str, str]]]:
     """Calculate deterministic score out of 100, letter grade, and findings.
 
@@ -148,27 +194,34 @@ def calculate_score_and_findings(
                 "fix": "Change SPF default qualifier to '~all' or '-all' to reject unauthorized senders."
             })
 
-        # Count top-level terms: include, a, mx, ptr, exists, redirect
-        # Split SPF by whitespace
-        tokens = spf_record.split()
-        lookup_terms = [
-            t for t in tokens[1:]
-            if any(t.lower().startswith(prefix) for prefix in ["include:", "a", "mx", "ptr", "exists:", "redirect="])
-        ]
-        if len(lookup_terms) <= 10:
+        # Count DNS-querying mechanisms (include, a, mx, ptr, exists, redirect)
+        # Replaces top-level-only count with full tree count when available
+        if spf_lookups is not None:
+            num_lookups = int(spf_lookups)
+            lookup_desc = f"{num_lookups} lookup(s)"
+        else:
+            tokens = spf_record.split()
+            lookup_terms = [
+                t for t in tokens[1:]
+                if any(t.lower().startswith(prefix) for prefix in ["include:", "a", "mx", "ptr", "exists:", "redirect="])
+            ]
+            num_lookups = len(lookup_terms)
+            lookup_desc = f"{num_lookups} top-level term(s)"
+
+        if num_lookups <= 10:
             score += 10
             findings.append({
                 "check": "SPF Lookup Limit",
                 "status": "PASS",
-                "value": f"{len(lookup_terms)} top-level term(s)",
-                "fix": "No action needed. Top-level SPF terms are within safe limits."
+                "value": lookup_desc,
+                "fix": "No action needed. SPF DNS lookups are within the RFC 7208 limit of 10."
             })
         else:
             findings.append({
                 "check": "SPF Lookup Limit",
                 "status": "FAIL",
-                "value": f"{len(lookup_terms)} top-level term(s)",
-                "fix": "Flatten your SPF record to avoid exceeding the 10-lookup DNS evaluation limit."
+                "value": lookup_desc,
+                "fix": "Flatten your SPF record to avoid exceeding the 10-lookup DNS evaluation limit (RFC 7208)."
             })
     else:
         findings.append({
@@ -270,11 +323,12 @@ def calculate_score_and_findings(
     return score, grade, findings
 
 
-def scan_domain(domain: str) -> Dict[str, Any]:
+def scan_domain(domain: str, spf_lookups: Optional[int] = None) -> Dict[str, Any]:
     """Scans domain email posture via DNS over HTTPS, scores it, and saves to Firestore.
 
     Args:
         domain: The domain name to inspect (e.g. 'google.com').
+        spf_lookups: Optional total count of DNS-querying mechanisms from the full SPF tree.
 
     Returns:
         The evaluated scan document dictionary stored in Firestore.
@@ -335,7 +389,8 @@ def scan_domain(domain: str) -> Dict[str, Any]:
         dkim_selectors_found=dkim_selectors_found,
         dmarc_record=dmarc_record,
         dmarc_policy=dmarc_policy,
-        mta_sts=mta_sts
+        mta_sts=mta_sts,
+        spf_lookups=spf_lookups,
     )
 
     scan_doc = {
@@ -352,6 +407,8 @@ def scan_domain(domain: str) -> Dict[str, Any]:
         "findings": findings,
         "scanned_at": datetime.now(timezone.utc).isoformat()
     }
+    if spf_lookups is not None:
+        scan_doc["spf_lookups"] = int(spf_lookups)
 
     # Save to Firestore
     saved_doc = save_scan(scan_doc)

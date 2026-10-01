@@ -13,6 +13,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
+import json
 import datetime
 from zoneinfo import ZoneInfo
 
@@ -59,7 +61,7 @@ def get_current_time(query: str) -> str:
 
 
 from app.firestore_backend import get_scan, list_scans, save_scan
-from app.dns_scanner import query_doh, scan_domain
+from app.dns_scanner import query_doh, scan_domain, collect_spf_tree
 
 
 SCANNER_INSTRUCTION = (
@@ -123,8 +125,8 @@ async def generate_badge(domain: str, grade: str, tool_context: ToolContext = No
     color = COLOR_MAP.get(grade_letter, "red")
 
     prompt = (
-        f"A clean, flat shield-style badge with a solid {color} background and the single letter {grade_letter}. "
-        f"Minimalist vector graphic style, centered single letter {grade_letter}, no other text, no shadows, modern flat design."
+        f"A clean, flat shield-style badge with a solid {color} fill and the single letter {grade_letter}. "
+        f"Minimalist vector graphic style, centered single white letter {grade_letter}, dark background #121212, no light box, no borders around image, no other text, modern flat design."
     )
 
     project_id = os.environ.get("GOOGLE_CLOUD_PROJECT", "qwiklabs-gcp-04-f25c6b05fda3")
@@ -143,8 +145,11 @@ async def generate_badge(domain: str, grade: str, tool_context: ToolContext = No
 
     filename = f"{domain_clean}.png"
     if tool_context and hasattr(tool_context, "save_artifact"):
-        part = types.Part.from_bytes(data=png_bytes, mime_type="image/png")
-        await tool_context.save_artifact(filename=filename, artifact=part)
+        try:
+            part = types.Part.from_bytes(data=png_bytes, mime_type="image/png")
+            await tool_context.save_artifact(filename=filename, artifact=part)
+        except Exception:
+            pass
 
     bucket_name = "email-posture-badges-17c8d5"
     storage_client = storage.Client(project=project_id)
@@ -167,7 +172,26 @@ async def generate_badge(domain: str, grade: str, tool_context: ToolContext = No
 
 from app.prompt_builder import A2UI_SYSTEM_INSTRUCTION
 from app.a2ui_utils import a2ui_callback
+from google.adk.code_executors.agent_engine_sandbox_code_executor import AgentEngineSandboxCodeExecutor
 
+def _get_agent_engine_resource_name() -> str:
+    metadata_file = os.path.join(os.path.dirname(os.path.dirname(__file__)), "deployment_metadata.json")
+    if os.path.exists(metadata_file):
+        try:
+            with open(metadata_file, "r") as f:
+                data = json.load(f)
+                val = data.get("remote_agent_runtime_id")
+                if val and val != "None":
+                    return val
+        except Exception:
+            pass
+    return "projects/827123697901/locations/us-central1/reasoningEngines/8711605998973878272"
+
+code_executor = AgentEngineSandboxCodeExecutor(
+    agent_engine_resource_name=_get_agent_engine_resource_name(),
+)
+
+from google.adk.tools import load_memory, preload_memory
 
 root_agent = Agent(
     name="root_agent",
@@ -176,8 +200,9 @@ root_agent = Agent(
         retry_options=types.HttpRetryOptions(attempts=3),
     ),
     instruction=A2UI_SYSTEM_INSTRUCTION,
+    code_executor=code_executor,
     after_model_callback=a2ui_callback,
-    tools=[scan_domain, generate_badge, query_doh, get_scan, list_scans, save_scan],
+    tools=[scan_domain, generate_badge, collect_spf_tree, query_doh, get_scan, list_scans, save_scan, load_memory, preload_memory],
 )
 
 app = App(

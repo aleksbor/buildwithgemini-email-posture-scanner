@@ -89,6 +89,8 @@ def save_scan(scan: Dict[str, Any]) -> Dict[str, Any]:
         "findings": list(scan.get("findings", [])),
         "scanned_at": scanned_at,
     }
+    if "spf_lookups" in scan:
+        doc_data["spf_lookups"] = int(scan["spf_lookups"])
     if "badge_url" in scan:
         doc_data["badge_url"] = str(scan["badge_url"])
 

@@ -30,6 +30,7 @@ from google.adk.cli.utils.service_factory import create_session_service_from_opt
 
 SESSION_SERVICE_URI = "shared://session"
 ARTIFACT_SERVICE_URI = "shared://artifact"
+MEMORY_SERVICE_URI = "shared://memory"
 
 _AGENT_DIR = os.path.dirname(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -67,6 +68,60 @@ def get_artifact_service():
     return InMemoryArtifactService()
 
 
+@functools.cache
+def get_memory_service():
+    """Process-wide memory service using Vertex AI Memory Bank (Agent Engine)."""
+    if uri := os.environ.get("MEMORY_SERVICE_URI"):
+        from google.adk.cli.utils.service_factory import create_memory_service_from_options
+
+        return create_memory_service_from_options(
+            base_dir=_AGENT_DIR, memory_service_uri=uri
+        )
+    from google.adk.memory.vertex_ai_memory_bank_service import VertexAiMemoryBankService
+
+    project = os.environ.get("GOOGLE_CLOUD_PROJECT", "827123697901")
+    agent_engine_id = os.environ.get("GOOGLE_CLOUD_AGENT_ENGINE_ID", "8711605998973878272")
+    location = (
+        os.environ.get("GOOGLE_CLOUD_AGENT_ENGINE_LOCATION")
+        or "us-central1"
+    )
+    return VertexAiMemoryBankService(
+        project=project,
+        location=location,
+        agent_engine_id=agent_engine_id,
+    )
+
+
+def _agentengine_memory_factory(uri: str, **kw):
+    from urllib.parse import urlparse
+    from google.adk.memory.vertex_ai_memory_bank_service import VertexAiMemoryBankService
+
+    parsed = urlparse(uri)
+    resource_id = (parsed.netloc + parsed.path).strip("/")
+    if "/" not in resource_id:
+        project = os.environ.get("GOOGLE_CLOUD_PROJECT", "827123697901")
+        location = os.environ.get("GOOGLE_CLOUD_AGENT_ENGINE_LOCATION", "us-central1")
+        return VertexAiMemoryBankService(
+            project=project,
+            location=location,
+            agent_engine_id=resource_id,
+        )
+    parts = resource_id.split("/")
+    if len(parts) == 6:
+        return VertexAiMemoryBankService(
+            project=parts[1],
+            location=parts[3],
+            agent_engine_id=parts[5],
+        )
+    return VertexAiMemoryBankService(
+        project="827123697901",
+        location="us-central1",
+        agent_engine_id=resource_id,
+    )
+
+
 _registry = get_service_registry()
 _registry.register_session_service("shared", lambda uri, **kw: get_session_service())
 _registry.register_artifact_service("shared", lambda uri, **kw: get_artifact_service())
+_registry.register_memory_service("shared", lambda uri, **kw: get_memory_service())
+_registry.register_memory_service("agentengine", _agentengine_memory_factory)

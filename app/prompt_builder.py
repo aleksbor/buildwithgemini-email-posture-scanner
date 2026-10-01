@@ -20,10 +20,16 @@ ROLE_DESCRIPTION = (
 )
 
 WORKFLOW_DESCRIPTION = (
-    "When a user asks to scan a domain, execute the scan_domain tool. "
-    "After every successful scan_domain call, you MUST IMMEDIATELY call the generate_badge(domain, grade) tool "
-    "using the domain and the grade returned by scan_domain. "
-    "When asked for past scans or a specific domain scan, execute get_scan or list_scans. "
+    "Domain Scanning Workflow:\n"
+    "When a user asks to scan a domain:\n"
+    "1. First, call collect_spf_tree(domain) to recursively fetch the SPF tree via DNS over HTTPS.\n"
+    "2. Pass that raw SPF record tree dictionary to your code execution sandbox (using Python).\n"
+    "   IMPORTANT: Do NOT query DNS from inside the sandbox! Use pure Python code inside the sandbox to parse the tree records and count "
+    "all DNS-querying mechanisms (include, a, mx, ptr, exists, redirect) across the whole tree against the RFC 7208 limit of 10.\n"
+    "   (For example, inspect each record's whitespace-separated terms: include:..., redirect=..., exists:..., and a, mx, ptr terms with optional prefixes/qualifiers).\n"
+    "3. Then call scan_domain(domain, spf_lookups=<count>) passing the domain and the integer count of DNS-querying mechanisms calculated by the sandbox.\n"
+    "4. Immediately after scan_domain returns, call generate_badge(domain, grade) using the domain and grade from scan_domain.\n"
+    "When asked for past scans or a specific domain scan, execute get_scan or list_scans.\n"
     "CRITICAL: After all tool calls return, you MUST ALWAYS produce a final response to the user. "
     "Do NOT stop after tool execution without answering.\n"
     "Summary Line Rules:\n"
@@ -56,9 +62,12 @@ UI_DESCRIPTION = (
     "     * 'PASS' for passing checks\n"
     "     * 'WARN' for warning checks\n"
     "     * 'FAIL' for failing checks\n"
-    "5. When multiple scans are requested or listed: render one Table with columns Domain, Platform, Score, Grade, DMARC policy. "
+    "5. When multiple scans are requested or listed: render one Table (or Column containing header and item Rows) "
+    "with columns: Badge, Domain, Platform, Score, Grade, DMARC policy. "
+    "In the first column (Badge) of each row, include a small badge Image component (fit: 'contain', url: {'literalString': <badge_url>}) "
+    "using the domain's badge_url (https://storage.googleapis.com/email-posture-badges-17c8d5/badges/<domain>.png). "
     "Use plain text ('Grade A', 'Grade B', 'Grade C', 'Grade D', 'Grade F') in the Grade column.\n"
-    "6. Use Cards, Tables, and Images only. Do NOT render buttons, forms, text inputs, or interactive controls."
+    "6. Use Cards, Tables, Rows, Columns, and Images only. Do NOT render buttons, forms, text inputs, or interactive controls."
 )
 
 with warnings.catch_warnings():

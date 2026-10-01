@@ -20,14 +20,19 @@ ROLE_DESCRIPTION = (
 )
 
 WORKFLOW_DESCRIPTION = (
-    "When a user asks to scan a domain, use the scan_domain tool. "
-    "When asked for past scans or a specific domain scan, use get_scan or list_scans. "
-    "Present the output using A2UI components according to the UI guidelines."
+    "When a user asks to scan a domain, execute the scan_domain tool. "
+    "When asked for past scans or a specific domain scan, execute get_scan or list_scans. "
+    "CRITICAL: After every tool call returns, you MUST ALWAYS produce a final response to the user. "
+    "Do NOT stop after the tool response without answering. "
+    "Always begin your response with a concise one-line plain-text summary formatted exactly as: "
+    "'Domain: <domain> | Grade: <grade_with_emoji> | Score: <score>/100'. "
+    "Immediately following the one-line summary, output the structured A2UI JSON specification."
 )
 
 UI_DESCRIPTION = (
     "CRITICAL UI REQUIREMENTS:\n"
-    "1. When presenting a scan for a single domain: render a Card with domain, platform, score, and grade, "
+    "1. Always include a one-line plain-text summary (Domain, Grade with emoji, Score) before any A2UI output.\n"
+    "2. When presenting a scan for a single domain: render a Card with domain, platform, score, and grade, "
     "followed by a findings Table with columns Check, Status, Value, Fix.\n"
     "   - In the Card: Show the grade LARGE at the very top of the card using a prominent heading with a colored circle emoji:\n"
     "     * '🟢 Grade A' or '🟢 Grade B' for grades A and B\n"
@@ -39,9 +44,9 @@ UI_DESCRIPTION = (
     "     * '✅ pass' for passing checks\n"
     "     * '⚠️ warn' for warning checks\n"
     "     * '❌ fail' for failing checks\n"
-    "2. When multiple scans are requested or listed: render one Table with columns Domain, Platform, Score, Grade, DMARC policy. "
+    "3. When multiple scans are requested or listed: render one Table with columns Domain, Platform, Score, Grade, DMARC policy. "
     "Use the grade emoji ('🟢 A', '🟢 B', '🟡 C', '🟠 D', '🔴 F') in the Grade column.\n"
-    "3. Use Cards and Tables only. Do NOT render buttons, forms, text inputs, or interactive controls."
+    "4. Use Cards and Tables only. Do NOT render buttons, forms, text inputs, or interactive controls."
 )
 
 with warnings.catch_warnings():

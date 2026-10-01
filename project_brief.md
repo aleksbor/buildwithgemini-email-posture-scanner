@@ -56,3 +56,4 @@ The following items are deferred from today's scope and scheduled for subsequent
 3. **Memory Bank**: Persistent personalization for preferred tenant DKIM selectors, custom MSP discovery rules, and tailored client pitch/report phrasing styles.
 4. **Cloud Run Frontend**: Standalone web UI application deployed on Google Cloud Run for client-facing self-service scans.
 5. **Agent Platform Redeployment**: Production redeployments and CI/CD pipelines targeting the enterprise Agent Platform runtime.
+6. **Fix A2UI card rendering in ADK dev UI**: Refine A2UI component rendering and data part encapsulation for ADK dev UI.
